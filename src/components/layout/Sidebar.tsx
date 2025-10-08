@@ -1,4 +1,4 @@
-import { Home, BookOpen, FileText, Brain, BarChart3, Upload, Settings } from 'lucide-react';
+import { Zap, Upload, BarChart3, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -8,11 +8,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'home', label: 'Home', icon: Home },
-  { id: 'learn', label: 'Learn', icon: BookOpen },
-  { id: 'items', label: 'Items', icon: FileText },
-  { id: 'concepts', label: 'Concepts', icon: Brain },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'home', label: 'Learn', icon: Zap },
+  { id: 'analytics', label: 'Progress', icon: BarChart3 },
   { id: 'import', label: 'Import', icon: Upload },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -28,11 +25,11 @@ export function Sidebar({ currentPage, onNavigate, collapsed }: SidebarProps) {
       <div className="flex h-16 items-center border-b px-4">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Brain className="h-6 w-6 text-primary" />
+            <Zap className="h-6 w-6 text-primary" />
             <span className="font-semibold text-lg">GapFinder</span>
           </div>
         )}
-        {collapsed && <Brain className="h-6 w-6 text-primary mx-auto" />}
+        {collapsed && <Zap className="h-6 w-6 text-primary mx-auto" />}
       </div>
 
       <nav className="flex-1 space-y-1 p-2" role="navigation" aria-label="Main navigation">

@@ -290,6 +290,63 @@ pub fn import_concepts_from_csv(state: State<AppState>, csv_content: String) -> 
     Ok(concepts)
 }
 
+// ==================== Quick Learn Commands ====================
+
+#[tauri::command]
+pub fn get_next_review_item(state: State<AppState>) -> Result<Option<Item>, String> {
+    let items = state.db.get_all_items().map_err(|e| e.to_string())?;
+    
+    // Find items that are due for review or new items
+    for item in &items {
+        let attempts = state.db.get_attempts_by_item(&item.id).map_err(|e| e.to_string())?;
+        
+        if attempts.is_empty() {
+            // New item, return it
+            return Ok(Some(item.clone()));
+        }
+        
+        // Check if item is due (simple check - last attempt scheduled days <= elapsed days)
+        if let Some(last_attempt) = attempts.first() {
+            if last_attempt.scheduled_days <= last_attempt.elapsed_days {
+                return Ok(Some(item.clone()));
+            }
+        }
+    }
+    
+    // If no due items, return the first new item or None
+    Ok(items.into_iter().find(|item| {
+        state.db.get_attempts_by_item(&item.id)
+            .map(|attempts| attempts.is_empty())
+            .unwrap_or(false)
+    }))
+}
+
+#[tauri::command]
+pub fn get_item_count(state: State<AppState>) -> Result<usize, String> {
+    let items = state.db.get_all_items().map_err(|e| e.to_string())?;
+    Ok(items.len())
+}
+
+#[tauri::command]
+pub fn get_due_count(state: State<AppState>) -> Result<usize, String> {
+    let items = state.db.get_all_items().map_err(|e| e.to_string())?;
+    let mut due_count = 0;
+    
+    for item in items {
+        let attempts = state.db.get_attempts_by_item(&item.id).map_err(|e| e.to_string())?;
+        
+        if attempts.is_empty() {
+            due_count += 1;
+        } else if let Some(last_attempt) = attempts.first() {
+            if last_attempt.scheduled_days <= last_attempt.elapsed_days {
+                due_count += 1;
+            }
+        }
+    }
+    
+    Ok(due_count)
+}
+
 // ==================== Database Management ====================
 
 #[tauri::command]

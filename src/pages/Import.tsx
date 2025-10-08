@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { invoke } from '@tauri-apps/api/tauri';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +19,300 @@ export function Import() {
   const [lectureSummary, setLectureSummary] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiApiKey, setAiApiKey] = useState('');
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setAiApiKey(savedKey);
+    }
+  }, []);
+
+  // Auto-generate questions for concepts
+  const generateQuestionsForConcepts = async (concepts: any[]) => {
+    setAiGenerating(true);
+    
+    // Set generation status in localStorage for real-time updates
+    localStorage.setItem('generation_status', JSON.stringify({
+      isGenerating: true,
+      progress: { current: 0, total: concepts.length }
+    }));
+
+    toast({
+      title: '✨ Generating Questions',
+      description: `Starting generation for ${concepts.length} concepts...`,
+      duration: 10000,
+    });
+
+    try {
+      for (let i = 0; i < concepts.length; i++) {
+        const concept = concepts[i];
+        
+        // Update progress
+        localStorage.setItem('generation_status', JSON.stringify({
+          isGenerating: true,
+          progress: { current: i, total: concepts.length }
+        }));
+        
+        // Enhanced prompt based on prompt engineering best practices
+        const learningObjective = concept.learning_objectives?.[0] || concept.name;
+        
+        const prompt = `You are an expert pharmacy educator skilled in designing high-quality assessments that align precisely with learning objectives. Your task is to generate pedagogically sound practice questions that evaluate student understanding across multiple cognitive levels.
+
+=== LEARNING OBJECTIVE ===
+"""
+${learningObjective}
+"""
+
+=== YOUR TASK ===
+Generate 3-5 practice questions that directly assess this learning objective. Each question must:
+
+1. ALIGN with the specific learning objective provided above
+2. TARGET different cognitive levels according to Bloom's Taxonomy:
+   - Remember: Recall facts, terms, concepts
+   - Understand: Explain ideas or concepts  
+   - Apply: Use information in new situations
+   - Analyze: Draw connections, distinguish between parts
+   - Evaluate: Justify decisions, critique approaches
+
+3. USE appropriate question formats:
+   - Multiple-choice questions (MCQ) with 4 plausible options
+   - Free-recall questions requiring explanation or application
+
+4. ENSURE clinical relevance for pharmacy practice
+5. PROVIDE clear, detailed explanations that teach the concept
+
+=== OUTPUT FORMAT ===
+Generate a JSON array with this exact structure:
+{
+  "items": [
+    {
+      "stem": "Clear, complete question text",
+      "type": "mcq" or "free-recall",
+      "choices": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": "The correct answer text",
+      "explanation": "Detailed explanation covering why the answer is correct and why other options are incorrect (for MCQ)",
+      "cognitive_level": "remember|understand|apply|analyze|evaluate",
+      "difficulty": 1-5 scale
+    }
+  ]
+}
+
+=== QUALITY CRITERIA ===
+✓ Questions must be unambiguous and clear
+✓ MCQ distractors should be plausible but clearly incorrect
+✓ Explanations should enhance learning, not just state correctness
+✓ Vary difficulty across the question set (mix of easier and harder)
+✓ Include at least one application-level question
+✓ Use clinical scenarios where appropriate
+
+Generate the questions now.`;
+
+        // Check which provider to use
+        const provider = localStorage.getItem('ai_provider') || 'gemini';
+        let text = '';
+        let usedProvider = provider;
+        
+        try {
+          if (provider === 'gemini' && aiApiKey && aiApiKey.trim()) {
+            // Use Gemini API
+            const { GoogleGenerativeAI } = await import('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(aiApiKey);
+            const model = genAI.getGenerativeModel({ 
+              model: 'gemini-2.0-flash-exp',
+              generationConfig: {
+                temperature: 0.8,
+                topP: 0.95,
+                topK: 40,
+                maxOutputTokens: 8192,
+                responseMimeType: 'application/json',
+              },
+            });
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            text = response.text();
+          } else if (provider === 'openrouter') {
+            // Use OpenRouter API
+            const openRouterKey = localStorage.getItem('openrouter_api_key');
+            const selectedModel = localStorage.getItem('selected_model');
+            
+            if (!openRouterKey || !selectedModel) {
+              throw new Error('OpenRouter not configured. Please set up in Settings.');
+            }
+            
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${openRouterKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': window.location.origin,
+                'X-Title': 'GapFinder AI',
+              },
+              body: JSON.stringify({
+                model: selectedModel,
+                messages: [
+                  {
+                    role: 'user',
+                    content: prompt
+                  }
+                ],
+                temperature: 0.8,
+                max_tokens: 8192,
+                response_format: { type: 'json_object' }
+              }),
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(`OpenRouter API error: ${response.statusText} - ${JSON.stringify(errorData)}`);
+            }
+            
+            const data = await response.json();
+            text = data.choices[0].message.content;
+          } else {
+            throw new Error('No valid API configuration found');
+          }
+        } catch (error: any) {
+          // Check if it's a rate limit error from Gemini
+          if (error.message?.includes('429') || error.message?.includes('quota')) {
+            console.error('❌ Gemini rate limit hit! Suggesting OpenRouter...');
+            
+            // Check if OpenRouter is configured
+            const openRouterKey = localStorage.getItem('openrouter_api_key');
+            const selectedModel = localStorage.getItem('selected_model');
+            
+            if (openRouterKey && selectedModel) {
+              console.log('🔄 Attempting to use OpenRouter as fallback...');
+              try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${openRouterKey}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': window.location.origin,
+                    'X-Title': 'GapFinder AI',
+                  },
+                  body: JSON.stringify({
+                    model: selectedModel,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.8,
+                    max_tokens: 8192,
+                    response_format: { type: 'json_object' }
+                  }),
+                });
+                
+                if (response.ok) {
+                  const data = await response.json();
+                  text = data.choices[0].message.content;
+                  usedProvider = 'openrouter (fallback)';
+                  console.log('✅ Successfully used OpenRouter as fallback!');
+                } else {
+                  throw new Error('OpenRouter fallback failed');
+                }
+              } catch (fallbackError) {
+                console.error('OpenRouter fallback failed:', fallbackError);
+                alert('⚠️ Gemini quota exceeded!\n\n' +
+                      'You\'ve hit the 50 requests/day limit.\n\n' +
+                      'Solutions:\n' +
+                      '1. Wait 24 hours for quota reset\n' +
+                      '2. Use OpenRouter (Settings → Select OpenRouter)\n' +
+                      '3. Get free models from https://openrouter.ai/keys\n\n' +
+                      'Generation stopped.');
+                throw error;
+              }
+            } else {
+              alert('⚠️ Gemini Quota Exceeded!\n\n' +
+                    '❌ You\'ve reached the 50 requests/day free tier limit.\n\n' +
+                    '✅ Solution: Use OpenRouter (unlimited free models!)\n\n' +
+                    'Steps:\n' +
+                    '1. Go to Settings\n' +
+                    '2. Select "OpenRouter" from dropdown\n' +
+                    '3. Get free API key: https://openrouter.ai/keys\n' +
+                    '4. Save key and select a free model\n' +
+                    '5. Come back and import again!\n\n' +
+                    'Generation stopped.');
+              throw error;
+            }
+          } else {
+            // Other errors
+            console.error(`Generation error for "${learningObjective}":`, error);
+            alert(`Generation Error:\n\n${error.message}\n\nCheck console for details.`);
+            throw error;
+          }
+        }
+          
+        // Log for debugging
+        console.log(`✅ Generated questions using ${usedProvider} for: ${learningObjective.substring(0, 50)}...`);
+        
+        const parsed = JSON.parse(text);
+        
+        // Validate response structure
+        if (!parsed.items || !Array.isArray(parsed.items)) {
+          console.warn('Invalid response structure, skipping concept');
+          continue;
+        }
+
+        // Create items for this concept
+        for (const item of parsed.items) {
+          let itemType;
+          if (item.type === 'mcq' && item.choices) {
+            itemType = {
+              type: 'mcq',
+              options: item.choices.map((choice: string, idx: number) => ({
+                id: `opt_${idx}`,
+                text: choice,
+                is_correct: choice === item.correct_answer || choice.startsWith(item.correct_answer?.charAt(0)),
+                explanation: null,
+              })),
+            };
+          } else {
+            itemType = {
+              type: 'free-recall',
+              correct_answer: item.correct_answer || '',
+            };
+          }
+
+          await invoke('create_item', {
+            stem: item.stem,
+            itemType: itemType,
+            conceptIds: [concept.id],
+            explanation: item.explanation || '',
+          });
+        }
+      }
+
+      // Mark as complete
+      localStorage.setItem('generation_status', JSON.stringify({
+        isGenerating: false,
+        progress: { current: concepts.length, total: concepts.length }
+      }));
+
+      toast({
+        title: '✅ Questions Generated!',
+        description: `Successfully created practice items for ${concepts.length} concepts. Start learning now!`,
+        duration: 5000,
+      });
+    } catch (error) {
+      console.error('Auto-generation error:', error);
+      
+      // Clear generation status on error
+      localStorage.removeItem('generation_status');
+      
+      toast({
+        title: 'Generation Error',
+        description: 'Some questions may not have been generated. Check console for details.',
+        variant: 'destructive',
+        duration: 5000,
+      });
+    } finally {
+      setAiGenerating(false);
+      // Ensure status is cleared after a brief delay to show completion
+      setTimeout(() => {
+        localStorage.removeItem('generation_status');
+      }, 3000);
+    }
+  };
 
   const handleLoImport = () => {
     const lines = loText.split('\n').filter((line) => line.trim());
@@ -137,8 +431,8 @@ export function Import() {
         
         await invoke('create_item', {
           stem: item.stem,
-          item_type: itemType,
-          concept_ids: conceptIds,
+          itemType: itemType,
+          conceptIds: conceptIds,
           explanation: item.explanation || '',
         });
       }
@@ -147,6 +441,25 @@ export function Import() {
         title: 'Import Successful',
         description: `Imported ${concepts.length} concepts and ${items.length} items successfully.`,
       });
+      
+      // Auto-generate questions in background if concepts were imported without items
+      if (concepts.length > 0 && items.length === 0) {
+        // Check if API key is available
+        const savedKey = localStorage.getItem('gemini_api_key');
+        if (savedKey && savedKey.trim()) {
+          const updatedConcepts = concepts.map(c => ({
+            ...c,
+            id: conceptNameToId.get(c.name)
+          }));
+          generateQuestionsForConcepts(updatedConcepts);
+        } else {
+          toast({
+            title: '⚠️ API Key Missing',
+            description: 'Add your Google Gemini API key in Settings to auto-generate questions.',
+            duration: 8000,
+          });
+        }
+      }
       
       // Reset form
       setShowPreview(false);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,11 +27,17 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export function Items() {
-  const { items, concepts } = useStore();
+  const { items, concepts, loadItems, loadConcepts } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<ItemType | 'all'>('all');
   const [showAuthorDialog, setShowAuthorDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+
+  // Load data on mount
+  useEffect(() => {
+    loadItems();
+    loadConcepts();
+  }, [loadItems, loadConcepts]);
 
   const filteredItems = items.filter((item) => {
     const matchesSearch =

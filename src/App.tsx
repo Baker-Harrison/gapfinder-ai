@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
-import { CommandPalette } from '@/components/CommandPalette';
 import { Toaster } from '@/components/ui/toaster';
 import { useStore } from '@/store';
 import { Home } from '@/pages/Home';
-import { Learn } from '@/pages/Learn';
-import { Items } from '@/pages/Items';
-import { Concepts } from '@/pages/Concepts';
 import { Analytics } from '@/pages/Analytics';
 import { Import } from '@/pages/Import';
 import { Settings } from '@/pages/Settings';
@@ -15,45 +11,38 @@ import './App.css';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
-  const { theme, sidebarCollapsed, toggleSidebar } = useStore();
+  const { theme, sidebarCollapsed, toggleSidebar, loadConcepts, loadItems, loadConceptMastery, loadDailyPlan } = useStore();
 
   useEffect(() => {
     // Apply theme to document
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
+  // Load initial data from database
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          loadConcepts(),
+          loadItems(),
+          loadConceptMastery(),
+          loadDailyPlan(),
+        ]);
+      } catch (error) {
+        console.error('Failed to load initial data:', error);
+      }
+    };
+    loadData();
+  }, []); // Run once on mount
+
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
-  };
-
-  const handleStartSession = () => {
-    setCurrentPage('learn');
-  };
-
-  const handleAction = (action: string) => {
-    switch (action) {
-      case 'start-session':
-        setCurrentPage('learn');
-        break;
-      case 'quick-diagnostic':
-        setCurrentPage('learn');
-        break;
-      case 'practice-weakest':
-        setCurrentPage('learn');
-        break;
-    }
   };
 
   const renderPage = () => {
     switch (currentPage) {
       case 'home':
-        return <Home onNavigate={handleNavigate} onStartSession={handleStartSession} />;
-      case 'learn':
-        return <Learn />;
-      case 'items':
-        return <Items />;
-      case 'concepts':
-        return <Concepts />;
+        return <Home onNavigate={handleNavigate} />;
       case 'analytics':
         return <Analytics />;
       case 'import':
@@ -61,7 +50,7 @@ function App() {
       case 'settings':
         return <Settings />;
       default:
-        return <Home onNavigate={handleNavigate} onStartSession={handleStartSession} />;
+        return <Home onNavigate={handleNavigate} />;
     }
   };
 
@@ -81,7 +70,6 @@ function App() {
         </main>
       </div>
 
-      <CommandPalette onNavigate={handleNavigate} onAction={handleAction} />
       <Toaster />
     </div>
   );

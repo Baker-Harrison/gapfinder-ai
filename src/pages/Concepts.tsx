@@ -57,7 +57,13 @@ export function Concepts() {
   const conceptsWithMastery = concepts.map(concept => {
     const mastery = conceptMastery.find(m => m.concept_id === concept.id);
     return {
-      ...concept,
+      id: concept.id,
+      name: concept.name,
+      domain: concept.domain,
+      subdomain: concept.subdomain || 'Other',
+      description: concept.description,
+      created_at: concept.createdAt?.toString() || new Date().toISOString(),
+      updated_at: concept.createdAt?.toString() || new Date().toISOString(),
       mastery: mastery?.mastery_score || 0,
       stability: mastery?.stability || 0,
       coverage: mastery ? (mastery.attempts > 0 ? 100 : 0) : 0,
@@ -226,9 +232,12 @@ export function Concepts() {
                                 }}
                                 title={`${concept.name}: ${concept.mastery}% mastery, ${concept.stability}d stability`}
                               >
-                                <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="absolute inset-0 flex flex-col items-center justify-center p-1 text-center">
                                   <span className="text-xs font-bold" style={{ color: getMasteryColor(concept.mastery) }}>
-                                    {concept.mastery}
+                                    {Math.round(concept.mastery)}
+                                  </span>
+                                  <span className="text-[8px] truncate w-full" style={{ color: getMasteryColor(concept.mastery) }}>
+                                    {concept.name.split(' ')[0]}
                                   </span>
                                 </div>
                               </button>

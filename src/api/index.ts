@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri';
-import type { Concept, Item, ItemType, Attempt, Session, SessionType, ConceptMastery, DailyPlan, PerformanceTrend } from '@/types';
+import type { Concept, Item, Attempt, Session, SessionType, ConceptMastery, DailyPlan, PerformanceTrend } from '@/types';
 
 export const conceptApi = {
   create: async (name: string, domain: string): Promise<Concept> => {
@@ -17,8 +17,13 @@ export const conceptApi = {
 };
 
 export const itemApi = {
-  create: async (stem: string, itemType: ItemType, conceptIds: string[], explanation: string): Promise<Item> => {
-    return await invoke('create_item', { stem, itemType, conceptIds, explanation });
+  create: async (stem: string, itemType: any, conceptIds: string[], explanation: string): Promise<Item> => {
+    return await invoke('create_item', { 
+      stem, 
+      itemType,  // Tauri converts camelCase to snake_case automatically
+      conceptIds,  // Tauri converts camelCase to snake_case automatically
+      explanation 
+    });
   },
   getAll: async (): Promise<Item[]> => {
     return await invoke('get_all_items');
@@ -33,19 +38,34 @@ export const itemApi = {
 
 export const attemptApi = {
   submit: async (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpentMs: number): Promise<Attempt> => {
-    return await invoke('submit_attempt', { itemId, sessionId, userAnswer, isCorrect, confidence, timeSpentMs });
+    return await invoke('submit_attempt', { 
+      itemId,  // Tauri converts to item_id
+      sessionId,  // Tauri converts to session_id
+      userAnswer,  // Tauri converts to user_answer
+      isCorrect,  // Tauri converts to is_correct
+      confidence, 
+      timeSpentMs  // Tauri converts to time_spent_ms
+    });
   },
   getByItem: async (itemId: string): Promise<Attempt[]> => {
-    return await invoke('get_attempts_by_item', { itemId });
+    return await invoke('get_attempts_by_item', { itemId });  // Tauri converts to item_id
   },
 };
 
 export const sessionApi = {
   create: async (sessionType: SessionType, totalItems: number): Promise<Session> => {
-    return await invoke('create_session', { sessionType, totalItems });
+    return await invoke('create_session', { 
+      sessionType,  // Tauri converts to session_type
+      totalItems  // Tauri converts to total_items
+    });
   },
   complete: async (sessionId: string, completedItems: number, accuracy: number, averageConfidence: number): Promise<void> => {
-    return await invoke('complete_session', { sessionId, completedItems, accuracy, averageConfidence });
+    return await invoke('complete_session', { 
+      sessionId,  // Tauri converts to session_id
+      completedItems,  // Tauri converts to completed_items
+      accuracy, 
+      averageConfidence  // Tauri converts to average_confidence
+    });
   },
   getAll: async (): Promise<Session[]> => {
     return await invoke('get_all_sessions');
@@ -76,6 +96,18 @@ export const databaseApi = {
   },
 };
 
+export const quickLearnApi = {
+  getNextItem: async (): Promise<Item | null> => {
+    return await invoke('get_next_review_item');
+  },
+  getDueCount: async (): Promise<number> => {
+    return await invoke('get_due_count');
+  },
+  getItemCount: async (): Promise<number> => {
+    return await invoke('get_item_count');
+  },
+};
+
 export const api = {
   concepts: conceptApi,
   items: itemApi,
@@ -84,4 +116,5 @@ export const api = {
   analytics: analyticsApi,
   import: importApi,
   database: databaseApi,
+  quickLearn: quickLearnApi,
 };

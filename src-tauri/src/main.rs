@@ -46,6 +46,9 @@ fn main() {
             commands::get_daily_plan,
             commands::get_performance_trends,
             commands::import_concepts_from_csv,
+            commands::get_next_review_item,
+            commands::get_item_count,
+            commands::get_due_count,
             commands::clear_all_data,
         ])
         .run(tauri::generate_context!())
