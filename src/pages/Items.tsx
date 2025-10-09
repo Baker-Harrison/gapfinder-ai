@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,10 +11,7 @@ import {
   Trash2,
   Copy,
   Upload,
-  Filter,
-  MoreVertical,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { Item, ItemType } from '@/types';
 import {
   Dialog,
@@ -248,7 +244,6 @@ interface AuthorDialogProps {
 }
 
 function AuthorDialog({ open, onOpenChange, item }: AuthorDialogProps) {
-  const { concepts } = useStore();
   const [itemType, setItemType] = useState<ItemType>('mcq');
   const [stem, setStem] = useState('');
   const [choices, setChoices] = useState(['', '', '', '']);

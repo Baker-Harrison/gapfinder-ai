@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useStore } from '@/store';
-import { Search, Plus, Trash2, Play, Target, X } from 'lucide-react';
+import { Search, Plus, Trash2, Play, Target, X, Loader2 } from 'lucide-react';
 import { cn, getMasteryColor, getMasteryLabel } from '@/lib/utils';
-import type { ConceptMastery } from '@/types';
 
 type ConceptWithMastery = {
   id: string;
@@ -62,12 +61,11 @@ export function Concepts() {
       domain: concept.domain,
       subdomain: concept.subdomain || 'Other',
       description: concept.description,
-      created_at: concept.createdAt?.toString() || new Date().toISOString(),
-      updated_at: concept.createdAt?.toString() || new Date().toISOString(),
+      created_at: concept.created_at || new Date().toISOString(),
+      updated_at: concept.updated_at || concept.created_at || new Date().toISOString(),
       mastery: mastery?.mastery_score || 0,
       stability: mastery?.stability || 0,
       coverage: mastery ? (mastery.attempts > 0 ? 100 : 0) : 0,
-      mastery_data: mastery,
     };
   });
 
@@ -196,6 +194,13 @@ export function Concepts() {
             </div>
           </div>
         </div>
+
+        {loading && (
+          <div className="flex items-center gap-2 px-6 py-2 text-sm text-muted-foreground border-b bg-muted/30">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Syncing concept data...
+          </div>
+        )}
 
         {/* Heatmap */}
         <div className="flex-1 overflow-auto p-6">

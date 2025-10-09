@@ -3,7 +3,6 @@ import { api } from '@/api';
 import type {
   Concept,
   Item,
-  Attempt,
   Session,
   TodayPlan,
   GapSummary,
