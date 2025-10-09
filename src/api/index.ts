@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri';
-import type { Concept, Item, Attempt, Session, SessionType, ConceptMastery, DailyPlan, PerformanceTrend } from '@/types';
+import type { Concept, Item, Attempt, Session, SessionType, ConceptMastery, DailyPlan, PerformanceTrend, LearningMaterial, MetacognitiveReflection } from '@/types';
 
 export const conceptApi = {
   create: async (name: string, domain: string): Promise<Concept> => {
@@ -37,14 +37,23 @@ export const itemApi = {
 };
 
 export const attemptApi = {
-  submit: async (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpentMs: number): Promise<Attempt> => {
+  submit: async (
+    itemId: string,
+    sessionId: string | null,
+    userAnswer: string,
+    isCorrect: boolean,
+    confidence: number,
+    timeSpentMs: number,
+    metacognitive?: MetacognitiveReflection
+  ): Promise<Attempt> => {
     return await invoke('submit_attempt', { 
       itemId,  // Tauri converts to item_id
       sessionId,  // Tauri converts to session_id
       userAnswer,  // Tauri converts to user_answer
       isCorrect,  // Tauri converts to is_correct
       confidence, 
-      timeSpentMs  // Tauri converts to time_spent_ms
+      timeSpentMs,  // Tauri converts to time_spent_ms
+      metacognitive
     });
   },
   getByItem: async (itemId: string): Promise<Attempt[]> => {
@@ -84,6 +93,15 @@ export const analyticsApi = {
   },
 };
 
+export const learningMaterialApi = {
+  create: async (content: string, domain: string): Promise<LearningMaterial> => {
+    return await invoke('create_learning_material', { content, domain });
+  },
+  get: async (id: string): Promise<LearningMaterial | null> => {
+    return await invoke('get_learning_material', { id });
+  },
+};
+
 export const importApi = {
   conceptsFromCsv: async (csvContent: string): Promise<Concept[]> => {
     return await invoke('import_concepts_from_csv', { csvContent });
@@ -114,6 +132,7 @@ export const api = {
   attempts: attemptApi,
   sessions: sessionApi,
   analytics: analyticsApi,
+  learningMaterials: learningMaterialApi,
   import: importApi,
   database: databaseApi,
   quickLearn: quickLearnApi,

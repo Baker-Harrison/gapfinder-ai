@@ -6,17 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Database, CheckCircle2, AlertCircle, Download, Sparkles, BookOpen } from 'lucide-react';
+import { Sparkles, BookOpen, CheckCircle2, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 export function Import() {
   const { toast } = useToast();
-  const [loText, setLoText] = useState('');
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [learningMaterial, setLearningMaterial] = useState('');
+  const [domain, setDomain] = useState('Pharmacy');
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [showPreview, setShowPreview] = useState(false);
-  const [lectureSummary, setLectureSummary] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiApiKey, setAiApiKey] = useState('');
 
@@ -29,7 +27,7 @@ export function Import() {
   }, []);
 
   // Auto-generate questions for concepts
-  const generateQuestionsForConcepts = async (concepts: any[]) => {
+  const generateQuestionsForConcepts = async (concepts: any[], learningMaterialId: string) => {
     setAiGenerating(true);
     
     // Set generation status in localStorage for real-time updates
@@ -54,77 +52,47 @@ export function Import() {
           progress: { current: i, total: concepts.length }
         }));
         
-        // Enhanced prompt based on prompt engineering best practices
-        const learningObjective = concept.learning_objectives?.[0] || concept.name;
-        
-        const prompt = `You are an expert pharmacy educator skilled in designing high-quality assessments that align precisely with learning objectives. Your task is to generate pedagogically sound practice questions that evaluate student understanding across multiple cognitive levels.
+        const prompt = `You are an expert educator skilled in designing questions for Justin Sung's Spaced-Interleaved Retrieval (SIR) framework.
 
-=== LEARNING OBJECTIVE ===
-"""
-${learningObjective}
-"""
+=== CONCEPT ===
+${concept.name}: ${concept.description || ''}
 
 === YOUR TASK ===
-Generate 3-5 practice questions that directly assess this learning objective. Each question must:
-
-1. ALIGN with the specific learning objective provided above
-2. TARGET different cognitive levels according to Bloom's Taxonomy:
-   - Remember: Recall facts, terms, concepts
-   - Understand: Explain ideas or concepts  
-   - Apply: Use information in new situations
-   - Analyze: Draw connections, distinguish between parts
-   - Evaluate: Justify decisions, critique approaches
-
-3. USE appropriate question formats:
-   - Multiple-choice questions (MCQ) with 4 plausible options
-   - Free-recall questions requiring explanation or application
-
-4. ENSURE clinical relevance for pharmacy practice
-5. PROVIDE clear, detailed explanations that teach the concept
+Generate 3-5 practice questions for this concept that:
+1. Test understanding at different cognitive levels (Remember, Understand, Apply, Analyze)
+2. Are suitable for spaced retrieval over time
+3. Can be mixed with related topics
+4. Build flexible, transferable knowledge
 
 === OUTPUT FORMAT ===
-Generate a JSON array with this exact structure:
 {
   "items": [
     {
-      "stem": "Clear, complete question text",
+      "stem": "Clear question text",
       "type": "mcq" or "free-recall",
       "choices": ["Option A", "Option B", "Option C", "Option D"],
-      "correct_answer": "The correct answer text",
-      "explanation": "Detailed explanation covering why the answer is correct and why other options are incorrect (for MCQ)",
-      "cognitive_level": "remember|understand|apply|analyze|evaluate",
-      "difficulty": 1-5 scale
+      "correct_answer": "The correct answer",
+      "explanation": "Detailed explanation",
+      "cognitive_level": "remember|understand|apply|analyze",
+      "difficulty": 1-5
     }
   ]
 }
-
-=== QUALITY CRITERIA ===
-✓ Questions must be unambiguous and clear
-✓ MCQ distractors should be plausible but clearly incorrect
-✓ Explanations should enhance learning, not just state correctness
-✓ Vary difficulty across the question set (mix of easier and harder)
-✓ Include at least one application-level question
-✓ Use clinical scenarios where appropriate
 
 Generate the questions now.`;
 
         // Check which provider to use
         const provider = localStorage.getItem('ai_provider') || 'gemini';
         let text = '';
-        let usedProvider = provider;
         
         try {
           if (provider === 'gemini' && aiApiKey && aiApiKey.trim()) {
-            // Use Gemini API
             const { GoogleGenerativeAI } = await import('@google/generative-ai');
             const genAI = new GoogleGenerativeAI(aiApiKey);
             const model = genAI.getGenerativeModel({ 
               model: 'gemini-2.0-flash-exp',
               generationConfig: {
                 temperature: 0.8,
-                topP: 0.95,
-                topK: 40,
-                maxOutputTokens: 8192,
                 responseMimeType: 'application/json',
               },
             });
@@ -132,124 +100,17 @@ Generate the questions now.`;
             const result = await model.generateContent(prompt);
             const response = await result.response;
             text = response.text();
-          } else if (provider === 'openrouter') {
-            // Use OpenRouter API
-            const openRouterKey = localStorage.getItem('openrouter_api_key');
-            const selectedModel = localStorage.getItem('selected_model');
-            
-            if (!openRouterKey || !selectedModel) {
-              throw new Error('OpenRouter not configured. Please set up in Settings.');
-            }
-            
-            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${openRouterKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-                'X-Title': 'GapFinder AI',
-              },
-              body: JSON.stringify({
-                model: selectedModel,
-                messages: [
-                  {
-                    role: 'user',
-                    content: prompt
-                  }
-                ],
-                temperature: 0.8,
-                max_tokens: 8192,
-                response_format: { type: 'json_object' }
-              }),
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              throw new Error(`OpenRouter API error: ${response.statusText} - ${JSON.stringify(errorData)}`);
-            }
-            
-            const data = await response.json();
-            text = data.choices[0].message.content;
           } else {
             throw new Error('No valid API configuration found');
           }
         } catch (error: any) {
-          // Check if it's a rate limit error from Gemini
-          if (error.message?.includes('429') || error.message?.includes('quota')) {
-            console.error('❌ Gemini rate limit hit! Suggesting OpenRouter...');
-            
-            // Check if OpenRouter is configured
-            const openRouterKey = localStorage.getItem('openrouter_api_key');
-            const selectedModel = localStorage.getItem('selected_model');
-            
-            if (openRouterKey && selectedModel) {
-              console.log('🔄 Attempting to use OpenRouter as fallback...');
-              try {
-                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${openRouterKey}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': window.location.origin,
-                    'X-Title': 'GapFinder AI',
-                  },
-                  body: JSON.stringify({
-                    model: selectedModel,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.8,
-                    max_tokens: 8192,
-                    response_format: { type: 'json_object' }
-                  }),
-                });
-                
-                if (response.ok) {
-                  const data = await response.json();
-                  text = data.choices[0].message.content;
-                  usedProvider = 'openrouter (fallback)';
-                  console.log('✅ Successfully used OpenRouter as fallback!');
-                } else {
-                  throw new Error('OpenRouter fallback failed');
-                }
-              } catch (fallbackError) {
-                console.error('OpenRouter fallback failed:', fallbackError);
-                alert('⚠️ Gemini quota exceeded!\n\n' +
-                      'You\'ve hit the 50 requests/day limit.\n\n' +
-                      'Solutions:\n' +
-                      '1. Wait 24 hours for quota reset\n' +
-                      '2. Use OpenRouter (Settings → Select OpenRouter)\n' +
-                      '3. Get free models from https://openrouter.ai/keys\n\n' +
-                      'Generation stopped.');
-                throw error;
-              }
-            } else {
-              alert('⚠️ Gemini Quota Exceeded!\n\n' +
-                    '❌ You\'ve reached the 50 requests/day free tier limit.\n\n' +
-                    '✅ Solution: Use OpenRouter (unlimited free models!)\n\n' +
-                    'Steps:\n' +
-                    '1. Go to Settings\n' +
-                    '2. Select "OpenRouter" from dropdown\n' +
-                    '3. Get free API key: https://openrouter.ai/keys\n' +
-                    '4. Save key and select a free model\n' +
-                    '5. Come back and import again!\n\n' +
-                    'Generation stopped.');
-              throw error;
-            }
-          } else {
-            // Other errors
-            console.error(`Generation error for "${learningObjective}":`, error);
-            alert(`Generation Error:\n\n${error.message}\n\nCheck console for details.`);
-            throw error;
-          }
+          console.error(`Generation error for "${concept.name}":`, error);
+          continue;
         }
           
-        // Log for debugging
-        console.log(`✅ Generated questions using ${usedProvider} for: ${learningObjective.substring(0, 50)}...`);
-        
         const parsed = JSON.parse(text);
         
-        // Validate response structure
         if (!parsed.items || !Array.isArray(parsed.items)) {
-          console.warn('Invalid response structure, skipping concept');
           continue;
         }
 
@@ -262,7 +123,7 @@ Generate the questions now.`;
               options: item.choices.map((choice: string, idx: number) => ({
                 id: `opt_${idx}`,
                 text: choice,
-                is_correct: choice === item.correct_answer || choice.startsWith(item.correct_answer?.charAt(0)),
+                is_correct: choice === item.correct_answer,
                 explanation: null,
               })),
             };
@@ -282,7 +143,6 @@ Generate the questions now.`;
         }
       }
 
-      // Mark as complete
       localStorage.setItem('generation_status', JSON.stringify({
         isGenerating: false,
         progress: { current: concepts.length, total: concepts.length }
@@ -290,254 +150,92 @@ Generate the questions now.`;
 
       toast({
         title: '✅ Questions Generated!',
-        description: `Successfully created practice items for ${concepts.length} concepts. Start learning now!`,
+        description: `Successfully created practice items for ${concepts.length} concepts.`,
         duration: 5000,
       });
     } catch (error) {
       console.error('Auto-generation error:', error);
-      
-      // Clear generation status on error
       localStorage.removeItem('generation_status');
       
       toast({
         title: 'Generation Error',
-        description: 'Some questions may not have been generated. Check console for details.',
+        description: 'Some questions may not have been generated.',
         variant: 'destructive',
         duration: 5000,
       });
     } finally {
       setAiGenerating(false);
-      // Ensure status is cleared after a brief delay to show completion
       setTimeout(() => {
         localStorage.removeItem('generation_status');
       }, 3000);
     }
   };
 
-  const handleLoImport = () => {
-    const lines = loText.split('\n').filter((line) => line.trim());
-    const preview = lines.map((line, index) => ({
-      id: index,
-      itemType: 'concept',
-      name: line, // Use full text as concept name
-      displayName: line.length > 50 ? `${line.slice(0, 50)}...` : line, // For UI display only
-      domain: 'General', // Default domain, can be customized
-      description: `Concept derived from learning objective`,
-      tags: [],
-      learning_objectives: [line], // The LO text becomes a learning objective
-      mapped: true,
-    }));
-    setImportPreview(preview);
-    setShowPreview(true);
-  };
-
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setCsvFile(file);
-      // Simulate CSV parsing
-      const preview = Array.from({ length: 5 }, (_, i) => ({
-        id: i,
-        stem: `Sample question ${i + 1} from CSV`,
-        type: 'mcq',
-        mapped: true,
-        concepts: ['Concept A', 'Concept B'],
-      }));
-      setImportPreview(preview);
-      setShowPreview(true);
-    }
-  };
-
-  const handleConfirmImport = async () => {
-    try {
-      // Separate concepts and items from preview
-      const concepts = importPreview.filter(item => item.itemType === 'concept');
-      const items = importPreview.filter(item => item.itemType === 'item');
-      
-      console.log(`Importing ${concepts.length} concepts and ${items.length} items`);
-      
-      // Create a map to track concept IDs
-      const conceptNameToId = new Map();
-      
-      // First, create all concepts
-      for (const concept of concepts) {
-        console.log('Creating concept:', concept.name);
-        // Create concept with just name and domain
-        const createdConcept = await invoke('create_concept', {
-          name: concept.name,
-          domain: concept.domain || 'General',
-        }) as any;
-        
-        // If there are additional fields, update the concept
-        if (concept.description || concept.tags?.length || concept.learning_objectives?.length) {
-          await invoke('update_concept', {
-            concept: {
-              ...createdConcept,
-              description: concept.description || null,
-              subdomain: null,
-              tags: concept.tags || [],
-              learning_objectives: concept.learning_objectives || [],
-              updated_at: new Date().toISOString(), // Update timestamp
-            }
-          });
-        }
-        
-        conceptNameToId.set(concept.name, createdConcept.id);
-        console.log('Concept created successfully:', createdConcept.id);
-      }
-      
-      console.log('All concepts created. Now creating items...');
-      
-      // Then, create all items with concept references
-      for (const item of items) {
-        // Map concept names to IDs
-        const conceptIds = (item.concepts || [])
-          .map((name: string) => conceptNameToId.get(name))
-          .filter(Boolean);
-        
-        // Convert item type to backend format
-        let itemType;
-        if (item.type === 'mcq' && item.choices) {
-          itemType = {
-            type: 'mcq',
-            options: item.choices.map((choice: string, idx: number) => ({
-              id: `opt_${idx}`,
-              text: choice,
-              is_correct: choice === item.correct_answer || choice.startsWith(item.correct_answer),
-              explanation: null,
-            })),
-          };
-        } else if (item.type === 'free-recall') {
-          itemType = {
-            type: 'free-recall',
-            correct_answer: item.correct_answer || '',
-          };
-        } else if (item.type === 'calc' || item.type === 'calculation') {
-          itemType = {
-            type: 'calc',
-            formula: item.formula || '',
-            variables: item.variables || [],
-            correct_answer: parseFloat(item.correct_answer) || 0,
-            unit: item.unit || '',
-            worked_solution: [],
-          };
-        } else {
-          // Default to free-recall
-          itemType = {
-            type: 'free-recall',
-            correct_answer: item.correct_answer || '',
-          };
-        }
-        
-        await invoke('create_item', {
-          stem: item.stem,
-          itemType: itemType,
-          conceptIds: conceptIds,
-          explanation: item.explanation || '',
-        });
-      }
-      
-      toast({
-        title: 'Import Successful',
-        description: `Imported ${concepts.length} concepts and ${items.length} items successfully.`,
-      });
-      
-      // Auto-generate questions in background if concepts were imported without items
-      if (concepts.length > 0 && items.length === 0) {
-        // Check if API key is available
-        const savedKey = localStorage.getItem('gemini_api_key');
-        if (savedKey && savedKey.trim()) {
-          const updatedConcepts = concepts.map(c => ({
-            ...c,
-            id: conceptNameToId.get(c.name)
-          }));
-          generateQuestionsForConcepts(updatedConcepts);
-        } else {
-          toast({
-            title: '⚠️ API Key Missing',
-            description: 'Add your Google Gemini API key in Settings to auto-generate questions.',
-            duration: 8000,
-          });
-        }
-      }
-      
-      // Reset form
-      setShowPreview(false);
-      setImportPreview([]);
-      setLoText('');
-      setCsvFile(null);
-      setLectureSummary('');
-    } catch (error) {
-      console.error('Import error:', error);
-      
-      // Extract detailed error message
-      let errorMessage = 'Failed to import items';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      toast({
-        title: 'Import Failed',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    }
-  };
-
   const handleAiGenerate = async () => {
-    if (!lectureSummary.trim()) return;
+    if (!learningMaterial.trim()) return;
     
     setAiGenerating(true);
     try {
       let generatedConcepts, generatedItems;
 
-      // If API key is provided, use real Gemini API
       if (aiApiKey && aiApiKey.trim()) {
         const genAI = new GoogleGenerativeAI(aiApiKey);
         const model = genAI.getGenerativeModel({ 
-          model: 'gemini-2.5-flash',
+          model: 'gemini-2.0-flash-exp',
           generationConfig: {
             temperature: 0.7,
-            topP: 0.95,
-            topK: 40,
             maxOutputTokens: 8192,
             responseMimeType: 'application/json',
           },
         });
 
-        const prompt = `You are an expert educational content creator. Analyze the following lecture summary and generate educational content.
+        const prompt = `You are a high-precision lecture ingestion engine for Justin Sung's SIR (Spaced-Interleaved Retrieval) framework. Transform raw educational material into cognitively optimized, testable learning data.
 
-Lecture Summary:
-${lectureSummary}
+=== LEARNING MATERIAL ===
+${learningMaterial}
 
-Generate a JSON response with this exact structure:
+=== COGNITIVE FRAMEWORK (GRINDE) ===
+• Generate: Identify relationships (causal, comparative, hierarchical)
+• Recall: Extract atomic facts for retrieval practice
+• Interleave: Link to related/prerequisite topics
+• Network: Build schema-level connections
+• Distribute: Estimate difficulty (1=simple recall, 5=complex application)
+
+=== EXTRACTION TASKS ===
+1. **Core Concepts** (3-5): Extract testable concepts with clear names, descriptions explaining "what" and "why it matters", and relevant tags
+2. **Relationships**: Identify hierarchical (topic→subtopic), associative (A↔B), and causal (X→Y) connections
+3. **Questions** (10-15): Generate across cognitive levels:
+   - Remember (30%): Facts, definitions, terminology
+   - Understand (30%): Explanations, comparisons, mechanisms
+   - Apply (25%): Clinical scenarios, problem-solving
+   - Analyze (15%): Complex reasoning, multi-step problems
+4. **Quality Focus**: Prioritize testable, exam-relevant, transferable knowledge. Avoid trivia.
+
+=== OUTPUT FORMAT (JSON) ===
 {
   "concepts": [
     {
-      "name": "concept name",
-      "domain": "subject area (e.g., Pharmacy, Medicine, Biology)",
-      "description": "clear, concise description",
-      "tags": ["tag1", "tag2"],
-      "learning_objectives": ["objective 1", "objective 2"]
+      "name": "Clear concept name (2-4 words)",
+      "domain": "${domain}",
+      "description": "Explain what this is and why it matters",
+      "tags": ["mechanism", "clinical", "foundational"]
     }
   ],
   "items": [
     {
-      "stem": "complete question text",
-      "type": "mcq|open|calculation|true_false",
-      "choices": ["A) choice 1", "B) choice 2", "C) choice 3", "D) choice 4"] (only for mcq),
-      "correct_answer": "the correct answer",
-      "explanation": "detailed explanation of why the answer is correct",
-      "concepts": ["related concept names"],
-      "difficulty": 1-5 (1=easiest, 5=hardest),
-      "tags": ["tag1", "tag2"]
+      "stem": "Clear, testable question (use clinical/applied contexts when possible)",
+      "type": "mcq|free-recall",
+      "choices": ["A) Plausible option", "B) Correct answer", "C) Common misconception", "D) Related distractor"],
+      "correct_answer": "B) Correct answer",
+      "explanation": "Detailed explanation reinforcing understanding and connections to other concepts",
+      "concepts": ["Related concept names from above"],
+      "difficulty": 1-5,
+      "cognitive_level": "remember|understand|apply|analyze"
     }
   ]
 }
 
-Generate 3-5 core concepts with detailed learning objectives and 8-15 practice items of varying types (mix of mcq, open-ended, calculations). For MCQ questions, always include 4 choices (A-D).`;
+Generate comprehensive output now. Prioritize depth over breadth.`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
@@ -545,16 +243,15 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
         const parsed = JSON.parse(text);
 
         generatedConcepts = parsed.concepts.map((c: any, i: number) => ({
-          id: i + 1,
+          id: `concept_${i + 1}`,
           name: c.name,
           domain: c.domain,
           description: c.description,
           tags: c.tags || [],
-          learning_objectives: c.learning_objectives || [],
         }));
 
         generatedItems = parsed.items.map((item: any, i: number) => ({
-          id: i + 1,
+          id: `item_${i + 1}`,
           stem: item.stem,
           type: item.type,
           choices: item.choices || null,
@@ -565,71 +262,12 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
           tags: item.tags || [],
         }));
       } else {
-        // Demo mode - use mock data
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        generatedConcepts = [
-          { 
-            id: 1, 
-            name: 'Pharmacokinetics', 
-            domain: 'Pharmacy', 
-            description: 'Study of drug absorption, distribution, metabolism and elimination (ADME)',
-            tags: ['ADME', 'Drug Kinetics'],
-            learning_objectives: ['Explain the four processes of ADME', 'Calculate pharmacokinetic parameters']
-          },
-          { 
-            id: 2, 
-            name: 'Drug Metabolism', 
-            domain: 'Pharmacy', 
-            description: 'Enzymatic transformation of drugs primarily in the liver',
-            tags: ['CYP450', 'Biotransformation'],
-            learning_objectives: ['Identify Phase I and Phase II reactions', 'Explain enzyme induction and inhibition']
-          },
-          { 
-            id: 3, 
-            name: 'Elimination Pathways', 
-            domain: 'Pharmacy', 
-            description: 'Routes of drug excretion from the body',
-            tags: ['Renal', 'Biliary', 'Clearance'],
-            learning_objectives: ['Describe renal elimination mechanisms', 'Calculate drug clearance']
-          },
-        ];
-        
-        generatedItems = [
-          { 
-            id: 1, 
-            stem: 'Which enzyme system is primarily responsible for drug metabolism?', 
-            type: 'mcq', 
-            choices: ['A) Monoamine oxidase', 'B) Cytochrome P450', 'C) Acetylcholinesterase', 'D) Alkaline phosphatase'],
-            correct_answer: 'B) Cytochrome P450',
-            explanation: 'The cytochrome P450 enzyme system, particularly CYP3A4, is responsible for metabolizing approximately 50% of all drugs.',
-            concepts: ['Drug Metabolism'],
-            difficulty: 2,
-            tags: ['CYP450', 'Enzymes']
-          },
-          { 
-            id: 2, 
-            stem: 'Calculate the half-life (t½) of a drug given: Volume of distribution (Vd) = 50L, Clearance (Cl) = 7L/hr. Use the formula: t½ = (0.693 × Vd) / Cl', 
-            type: 'calculation',
-            choices: null,
-            correct_answer: '4.95 hours',
-            explanation: 't½ = (0.693 × 50) / 7 = 34.65 / 7 = 4.95 hours',
-            concepts: ['Pharmacokinetics'],
-            difficulty: 4,
-            tags: ['Calculations', 'Half-life']
-          },
-          { 
-            id: 3, 
-            stem: 'List and briefly describe the three major routes of drug elimination from the body.', 
-            type: 'open',
-            choices: null,
-            correct_answer: '1) Renal excretion - drugs filtered/secreted by kidneys, 2) Biliary excretion - drugs secreted into bile and eliminated in feces, 3) Pulmonary excretion - volatile drugs exhaled through lungs',
-            explanation: 'The three major elimination routes are renal (most common for hydrophilic drugs), biliary (for larger molecules), and pulmonary (for volatile anesthetics).',
-            concepts: ['Elimination Pathways'],
-            difficulty: 3,
-            tags: ['Elimination', 'Excretion']
-          },
-        ];
+        toast({
+          title: 'API Key Required',
+          description: 'Please enter your Google Gemini API key to generate content.',
+          variant: 'destructive',
+        });
+        return;
       }
       
       setImportPreview([
@@ -655,264 +293,199 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
     }
   };
 
+  const handleConfirmImport = async () => {
+    try {
+      // First, save the learning material
+      const learningMaterialRecord = await invoke('create_learning_material', {
+        content: learningMaterial,
+        domain: domain,
+      }) as any;
+
+      // Separate concepts and items from preview
+      const concepts = importPreview.filter(item => item.itemType === 'concept');
+      const items = importPreview.filter(item => item.itemType === 'item');
+      
+      console.log(`Importing ${concepts.length} concepts and ${items.length} items`);
+      
+      const conceptNameToId = new Map();
+      
+      // Create all concepts
+      for (const concept of concepts) {
+        const createdConcept = await invoke('create_concept', {
+          name: concept.name,
+          domain: concept.domain || domain,
+        }) as any;
+        
+        // Update concept with learning material link
+        if (concept.description || concept.tags?.length) {
+          await invoke('update_concept', {
+            concept: {
+              ...createdConcept,
+              description: concept.description || null,
+              subdomain: null,
+              tags: concept.tags || [],
+              learning_material_id: learningMaterialRecord.id,
+              updated_at: new Date().toISOString(),
+            }
+          });
+        }
+        
+        conceptNameToId.set(concept.name, createdConcept.id);
+      }
+      
+      // Create all items
+      for (const item of items) {
+        const conceptIds = (item.concepts || [])
+          .map((name: string) => conceptNameToId.get(name))
+          .filter(Boolean);
+        
+        let itemType;
+        if (item.type === 'mcq' && item.choices) {
+          itemType = {
+            type: 'mcq',
+            options: item.choices.map((choice: string, idx: number) => ({
+              id: `opt_${idx}`,
+              text: choice,
+              is_correct: choice === item.correct_answer || choice.startsWith(item.correct_answer),
+              explanation: null,
+            })),
+          };
+        } else {
+          itemType = {
+            type: 'free-recall',
+            correct_answer: item.correct_answer || '',
+          };
+        }
+        
+        await invoke('create_item', {
+          stem: item.stem,
+          itemType: itemType,
+          conceptIds: conceptIds,
+          explanation: item.explanation || '',
+        });
+      }
+      
+      toast({
+        title: 'Import Successful',
+        description: `Imported ${concepts.length} concepts and ${items.length} items successfully.`,
+      });
+      
+      // Reset form
+      setShowPreview(false);
+      setImportPreview([]);
+      setLearningMaterial('');
+    } catch (error) {
+      console.error('Import error:', error);
+      
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import items',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Import & Generate</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Import Learning Material</h1>
         <p className="text-muted-foreground">
-          Use AI to generate content from lecture notes, or import from CSV, learning objectives, and Anki decks
+          Paste your learning material and AI will generate SIR-optimized practice questions
         </p>
       </div>
 
-      <Tabs defaultValue="ai" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="ai" className="gap-2">
-            <Sparkles className="h-4 w-4" />
-            AI Generate
-          </TabsTrigger>
-          <TabsTrigger value="los">Learning Objectives</TabsTrigger>
-          <TabsTrigger value="csv">CSV/TSV</TabsTrigger>
-          <TabsTrigger value="anki">Anki Deck</TabsTrigger>
-        </TabsList>
+      <Card className="border-primary">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <CardTitle>SIR-Based Learning Material</CardTitle>
+          </div>
+          <CardDescription>
+            Submit lecture notes, textbook excerpts, or study material for SIR question generation
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="api-key">Google Gemini API Key</Label>
+            <Input
+              id="api-key"
+              type="password"
+              placeholder="AIza..."
+              value={aiApiKey}
+              onChange={(e) => setAiApiKey(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Get your free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>
+            </p>
+          </div>
 
-        <TabsContent value="ai" className="space-y-4">
-          <Card className="border-primary">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle>AI-Powered Content Generation</CardTitle>
-              </div>
-              <CardDescription>
-                Submit lecture summaries, notes, or textbook excerpts and let AI automatically generate concepts and practice items
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="api-key">Google Gemini API Key (Optional)</Label>
-                <Input
-                  id="api-key"
-                  type="password"
-                  placeholder="AIza..."
-                  value={aiApiKey}
-                  onChange={(e) => setAiApiKey(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  For demo purposes, AI generation will work without a key. Add your Google Gemini API key for production use. Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>.
-                </p>
-              </div>
+          <div className="space-y-2">
+            <Label htmlFor="domain">Domain/Subject</Label>
+            <Input
+              id="domain"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="e.g., Pharmacy, Medicine, Biology"
+            />
+          </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="lecture-summary">Lecture Summary / Study Notes</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {lectureSummary.length > 0 && (
-                      <>
-                        {Math.round(lectureSummary.trim().split(/\s+/).length).toLocaleString()} words · {lectureSummary.length.toLocaleString()} chars
-                      </>
-                    )}
-                  </span>
-                </div>
-                <textarea
-                  id="lecture-summary"
-                  value={lectureSummary}
-                  onChange={(e) => setLectureSummary(e.target.value)}
-                  className="flex min-h-[600px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y overflow-y-auto font-mono leading-relaxed"
-                  placeholder="Paste your lecture summary, study notes, or textbook excerpt here...&#10;&#10;✨ Supports 10,000+ words with automatic scrolling ✨&#10;&#10;Example:&#10;&#10;Pharmacokinetics Overview&#10;&#10;Pharmacokinetics is the study of how the body affects drugs. It encompasses four main processes: Absorption, Distribution, Metabolism, and Elimination (ADME).&#10;&#10;Absorption: Drugs must cross biological membranes. Factors affecting absorption include lipid solubility, pH, and blood flow.&#10;&#10;Distribution: Once absorbed, drugs distribute throughout the body. Volume of distribution (Vd) indicates the apparent space in the body available to contain the drug.&#10;&#10;Metabolism: Primarily occurs in the liver via Phase I (oxidation, reduction) and Phase II (conjugation) reactions. The cytochrome P450 enzyme system is crucial.&#10;&#10;Elimination: Drugs are eliminated primarily through renal excretion and biliary elimination. Clearance (Cl) represents the volume of plasma cleared of drug per unit time."
-                />
-                <p className="text-xs text-muted-foreground">
-                  💡 Tip: Paste up to 10,000+ words. Include clear headings, detailed explanations, and examples for best AI results.
-                </p>
-              </div>
-
-              <div className="rounded-lg border bg-card p-4 space-y-2">
-                <h4 className="font-medium flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  What the AI will generate:
-                </h4>
-                <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
-                  <li>Core concepts and their relationships</li>
-                  <li>Learning objectives for each concept</li>
-                  <li>Multiple-choice questions</li>
-                  <li>Open-ended recall questions</li>
-                  <li>Clinical application scenarios</li>
-                  <li>Calculation-based problems (if applicable)</li>
-                </ul>
-              </div>
-
-              <Button 
-                onClick={handleAiGenerate} 
-                disabled={!lectureSummary.trim() || aiGenerating}
-                className="w-full gap-2"
-              >
-                {aiGenerating ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="learning-material">Learning Material</Label>
+              <span className="text-xs text-muted-foreground">
+                {learningMaterial.length > 0 && (
                   <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Generate Content with AI
+                    {Math.round(learningMaterial.trim().split(/\s+/).length).toLocaleString()} words · {learningMaterial.length.toLocaleString()} chars
                   </>
                 )}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </span>
+            </div>
+            <textarea
+              id="learning-material"
+              value={learningMaterial}
+              onChange={(e) => setLearningMaterial(e.target.value)}
+              className="flex min-h-[400px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y overflow-y-auto font-mono leading-relaxed"
+              placeholder="Paste your learning material here...&#10;&#10;Example:&#10;&#10;Pharmacokinetics Overview&#10;&#10;Pharmacokinetics is the study of how the body affects drugs through Absorption, Distribution, Metabolism, and Elimination (ADME).&#10;&#10;Absorption: Drugs cross biological membranes. Factors include lipid solubility, pH, and blood flow.&#10;&#10;Distribution: Drugs distribute throughout the body. Volume of distribution (Vd) indicates apparent space.&#10;&#10;Metabolism: Occurs in the liver via Phase I (oxidation, reduction) and Phase II (conjugation) reactions. CYP450 is crucial.&#10;&#10;Elimination: Primarily through renal and biliary routes. Clearance (Cl) = volume of plasma cleared per unit time."
+            />
+            <p className="text-xs text-muted-foreground">
+              💡 Tip: Include clear headings, detailed explanations, and examples for best results.
+            </p>
+          </div>
 
-        <TabsContent value="los" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import Learning Objectives</CardTitle>
-              <CardDescription>
-                Paste your learning objectives (one per line) and we'll auto-create concepts
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Learning Objectives</Label>
-                <textarea
-                  value={loText}
-                  onChange={(e) => setLoText(e.target.value)}
-                  className="flex min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  placeholder="Example:&#10;Calculate creatinine clearance using Cockcroft-Gault equation&#10;Identify drug-drug interactions for warfarin&#10;Recommend appropriate antibiotic therapy for community-acquired pneumonia"
-                />
-              </div>
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <h4 className="font-medium flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              SIR Framework - What Will Be Generated:
+            </h4>
+            <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
+              <li>Core concepts extracted from your material</li>
+              <li>Questions testing different cognitive levels</li>
+              <li>Spaced retrieval scheduling (1-2 days, 3-5 days, 7-10 days, 14+ days)</li>
+              <li>Interleaving support for mixing related topics</li>
+              <li>Metacognitive reflection prompts</li>
+              <li>Flexible, transferable knowledge building</li>
+            </ul>
+          </div>
 
-              <div className="flex items-center gap-2">
-                <Button onClick={handleLoImport} disabled={!loText.trim()}>
-                  Preview Import
-                </Button>
-                <p className="text-sm text-muted-foreground">
-                  {loText.split('\n').filter((l) => l.trim()).length} objectives detected
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="csv" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import CSV/TSV File</CardTitle>
-              <CardDescription>
-                Upload a CSV or TSV file with your questions and metadata
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>CSV File</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept=".csv,.tsv"
-                    onChange={handleCsvUpload}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon">
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Download template CSV to see expected format
-                </p>
-              </div>
-
-              {csvFile && (
-                <div className="rounded-lg border bg-muted p-4">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-primary" />
-                    <div className="flex-1">
-                      <p className="font-medium">{csvFile.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {(csvFile.size / 1024).toFixed(2)} KB
-                      </p>
-                    </div>
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-lg border bg-card p-4">
-                <h4 className="mb-2 font-medium">Expected Format</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="px-2 py-1 text-left">stem</th>
-                        <th className="px-2 py-1 text-left">type</th>
-                        <th className="px-2 py-1 text-left">choices</th>
-                        <th className="px-2 py-1 text-left">correct</th>
-                        <th className="px-2 py-1 text-left">concepts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="text-muted-foreground">
-                        <td className="px-2 py-1">What is...</td>
-                        <td className="px-2 py-1">mcq</td>
-                        <td className="px-2 py-1">A|B|C|D</td>
-                        <td className="px-2 py-1">A</td>
-                        <td className="px-2 py-1">Cardio;HTN</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="anki" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import Anki Deck</CardTitle>
-              <CardDescription>
-                Import cards from an Anki .apkg file
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Anki Package (.apkg)</Label>
-                <Input type="file" accept=".apkg" />
-              </div>
-
-              <div className="rounded-lg border border-warning bg-warning/10 p-4">
-                <div className="flex gap-2">
-                  <AlertCircle className="h-5 w-5 text-warning shrink-0" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Note</p>
-                    <p className="text-sm text-muted-foreground">
-                      Anki scheduling data will not be imported. Cards will be converted to
-                      items and scheduled using FSRS.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Concept Mapping</Label>
-                <p className="text-sm text-muted-foreground">
-                  How should we map Anki tags to concepts?
-                </p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="mapping" defaultChecked />
-                    <span className="text-sm">Use Anki tags as concepts</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="mapping" />
-                    <span className="text-sm">Use deck name as concept</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="mapping" />
-                    <span className="text-sm">Manual mapping after import</span>
-                  </label>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          <Button 
+            onClick={handleAiGenerate} 
+            disabled={!learningMaterial.trim() || !aiApiKey.trim() || aiGenerating}
+            className="w-full gap-2"
+          >
+            {aiGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Generate SIR Questions
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Preview Dialog */}
       {showPreview && (
@@ -922,11 +495,11 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
               <div>
                 <CardTitle>Import Preview</CardTitle>
                 <CardDescription>
-                  Review and approve the mapping before importing
+                  Review concepts and questions before importing
                 </CardDescription>
               </div>
               <Badge variant="outline">
-                {importPreview.filter((i) => i.mapped).length} / {importPreview.length} mapped
+                {importPreview.length} items
               </Badge>
             </div>
           </CardHeader>
@@ -935,39 +508,31 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
               <table className="w-full">
                 <thead className="sticky top-0 border-b bg-muted">
                   <tr>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Status</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium">Type</th>
                     <th className="px-4 py-2 text-left text-sm font-medium">Content</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Mapped To</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {importPreview.map((item) => (
                     <tr key={item.id} className="hover:bg-accent">
                       <td className="px-4 py-2">
-                        {item.mapped ? (
-                          <CheckCircle2 className="h-4 w-4 text-success" />
-                        ) : (
-                          <AlertCircle className="h-4 w-4 text-warning" />
-                        )}
+                        <Badge variant={item.itemType === 'concept' ? 'default' : 'secondary'}>
+                          {item.itemType}
+                        </Badge>
                       </td>
                       <td className="px-4 py-2">
                         <p className="line-clamp-2 text-sm">
                           {item.itemType === 'concept' 
-                            ? (item.displayName || item.name)
-                            : (item.text || item.stem)}
+                            ? item.name
+                            : item.stem}
                         </p>
                       </td>
                       <td className="px-4 py-2">
-                        {item.mapped ? (
-                          <Badge variant="secondary" className="text-xs">
-                            {item.itemType === 'concept' 
-                              ? `Concept: ${item.domain}` 
-                              : (item.conceptName || item.concepts?.join(', '))}
-                          </Badge>
+                        {item.itemType === 'concept' ? (
+                          <span className="text-sm text-muted-foreground">{item.domain}</span>
                         ) : (
-                          <span className="text-sm text-muted-foreground">
-                            Manual mapping required
-                          </span>
+                          <Badge variant="outline">{item.type}</Badge>
                         )}
                       </td>
                     </tr>
@@ -978,17 +543,14 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
 
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
-                {importPreview.filter((i) => !i.mapped).length > 0 && (
-                  <span className="text-warning">
-                    {importPreview.filter((i) => !i.mapped).length} items need manual mapping
-                  </span>
-                )}
+                {importPreview.filter(i => i.itemType === 'concept').length} concepts · {importPreview.filter(i => i.itemType === 'item').length} questions
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setShowPreview(false)}>
                   Cancel
                 </Button>
                 <Button onClick={handleConfirmImport}>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
                   Confirm Import
                 </Button>
               </div>
@@ -996,40 +558,6 @@ Generate 3-5 core concepts with detailed learning objectives and 8-15 practice i
           </CardContent>
         </Card>
       )}
-
-      {/* Recent Imports */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Imports</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[
-              { name: 'Pharmacy Calculations LOs', date: '2 days ago', count: 45 },
-              { name: 'Cardiology MCQs', date: '1 week ago', count: 120 },
-              { name: 'ID Antibiotics Deck', date: '2 weeks ago', count: 78 },
-            ].map((item, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <Database className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {item.count} items · {item.date}
-                    </p>
-                  </div>
-                </div>
-                <Button variant="ghost" size="sm">
-                  View
-                </Button>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

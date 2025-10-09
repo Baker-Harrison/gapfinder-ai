@@ -4,11 +4,13 @@
 mod models;
 mod database;
 mod fsrs;
+mod sir_scheduler;
 mod commands;
 
 use commands::AppState;
 use database::Database;
 use fsrs::FSRSScheduler;
+use sir_scheduler::SirScheduler;
 use std::sync::Arc;
 
 fn main() {
@@ -20,10 +22,12 @@ fn main() {
     let db_path = app_data_dir.join("gapfinder.db");
     let db = Database::new(db_path).expect("Failed to initialize database");
     let fsrs = FSRSScheduler::default();
+    let sir = SirScheduler::new();
     
     let state = AppState {
         db: Arc::new(db),
         fsrs: Arc::new(fsrs),
+        sir: Arc::new(sir),
     };
 
     tauri::Builder::default()
@@ -50,6 +54,8 @@ fn main() {
             commands::get_item_count,
             commands::get_due_count,
             commands::clear_all_data,
+            commands::create_learning_material,
+            commands::get_learning_material,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,6 +2,30 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// ==================== Learning Material ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LearningMaterial {
+    pub id: String,
+    pub content: String,
+    pub domain: String,
+    pub encoding_date: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl LearningMaterial {
+    pub fn new(content: String, domain: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            content,
+            domain,
+            encoding_date: now,
+            created_at: now,
+        }
+    }
+}
+
 // ==================== Concept ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,7 +36,7 @@ pub struct Concept {
     pub subdomain: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
-    pub learning_objectives: Vec<String>,
+    pub learning_material_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -27,7 +51,7 @@ impl Concept {
             subdomain: None,
             description: None,
             tags: Vec::new(),
-            learning_objectives: Vec::new(),
+            learning_material_id: None,
             created_at: now,
             updated_at: now,
         }
@@ -127,6 +151,23 @@ impl Item {
 
 // ==================== Attempt ====================
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SirPhase {
+    Encoding,           // Day 0
+    ShortTermRetrieval, // 1-2 days
+    InterleavedRetrieval, // 3-5 days
+    MediumSpacing,      // 7-10 days
+    IntegrationTransfer, // 14+ days
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetacognitiveReflection {
+    pub felt_uncertain: bool,
+    pub felt_confusing: bool,
+    pub needs_review: bool,
+    pub notes: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
     pub id: String,
@@ -137,6 +178,10 @@ pub struct Attempt {
     pub confidence: i32,
     pub time_spent_ms: i64,
     pub attempted_at: DateTime<Utc>,
+    pub sir_phase: SirPhase,
+    pub next_review_date: DateTime<Utc>,
+    pub metacognitive: Option<MetacognitiveReflection>,
+    // Keep legacy FSRS fields for backward compatibility
     pub stability: f64,
     pub difficulty: f64,
     pub elapsed_days: i32,
@@ -161,6 +206,7 @@ impl Attempt {
         confidence: i32,
         time_spent_ms: i64,
     ) -> Self {
+        let now = Utc::now();
         Self {
             id: Uuid::new_v4().to_string(),
             item_id,
@@ -169,7 +215,10 @@ impl Attempt {
             is_correct,
             confidence,
             time_spent_ms,
-            attempted_at: Utc::now(),
+            attempted_at: now,
+            sir_phase: SirPhase::Encoding,
+            next_review_date: now,
+            metacognitive: None,
             stability: 0.0,
             difficulty: 0.0,
             elapsed_days: 0,

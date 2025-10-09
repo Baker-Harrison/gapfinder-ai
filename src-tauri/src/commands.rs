@@ -1,5 +1,6 @@
 use crate::database::Database;
 use crate::fsrs::FSRSScheduler;
+use crate::sir_scheduler::SirScheduler;
 use crate::models::*;
 use chrono::Utc;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use tauri::State;
 pub struct AppState {
     pub db: Arc<Database>,
     pub fsrs: Arc<FSRSScheduler>,
+    pub sir: Arc<SirScheduler>,
 }
 
 // ==================== Concept Commands ====================
@@ -64,6 +66,27 @@ pub fn delete_item(state: State<AppState>, id: String) -> Result<(), String> {
     state.db.delete_item(&id).map_err(|e| e.to_string())
 }
 
+// ==================== Learning Material Commands ====================
+
+#[tauri::command]
+pub fn create_learning_material(
+    state: State<AppState>,
+    content: String,
+    domain: String,
+) -> Result<LearningMaterial, String> {
+    let material = LearningMaterial::new(content, domain);
+    state.db.create_learning_material(&material).map_err(|e| e.to_string())?;
+    Ok(material)
+}
+
+#[tauri::command]
+pub fn get_learning_material(
+    state: State<AppState>,
+    id: String,
+) -> Result<Option<LearningMaterial>, String> {
+    state.db.get_learning_material(&id).map_err(|e| e.to_string())
+}
+
 // ==================== Attempt Commands ====================
 
 #[tauri::command]
@@ -75,16 +98,21 @@ pub fn submit_attempt(
     is_correct: bool,
     confidence: i32,
     time_spent_ms: i64,
+    metacognitive: Option<MetacognitiveReflection>,
 ) -> Result<Attempt, String> {
     let mut attempt = Attempt::new(item_id.clone(), session_id, user_answer, is_correct, confidence, time_spent_ms);
     
+    // Use SIR scheduler for SIR-based scheduling
+    state.sir.schedule(&mut attempt, metacognitive);
+    
+    // Also keep FSRS compatibility
     let rating = if is_correct {
         confidence.min(4).max(2)
     } else {
         1
     };
-    
     state.fsrs.schedule(&mut attempt, rating);
+    
     state.db.create_attempt(&attempt).map_err(|e| e.to_string())?;
     
     Ok(attempt)
@@ -147,7 +175,7 @@ pub fn get_concept_mastery(state: State<AppState>) -> Result<Vec<ConceptMastery>
             }
         }
         
-        let mastery_score = state.fsrs.calculate_mastery(&all_attempts);
+        let mastery_score = state.sir.calculate_mastery(&all_attempts);
         
         let attempts_count = all_attempts.len() as i32;
         let correct_count = all_attempts.iter().filter(|a| a.is_correct).count() as i32;
@@ -158,7 +186,7 @@ pub fn get_concept_mastery(state: State<AppState>) -> Result<Vec<ConceptMastery>
             0.0
         };
         
-        let brier_score = state.fsrs.calculate_brier_score(&all_attempts);
+        let brier_score = state.sir.calculate_brier_score(&all_attempts);
         let last_attempted = all_attempts.first().map(|a| a.attempted_at);
         
         let avg_stability = if !all_attempts.is_empty() {
@@ -296,29 +324,45 @@ pub fn import_concepts_from_csv(state: State<AppState>, csv_content: String) -> 
 pub fn get_next_review_item(state: State<AppState>) -> Result<Option<Item>, String> {
     let items = state.db.get_all_items().map_err(|e| e.to_string())?;
     
-    // Find items that are due for review or new items
+    // Prioritize items for SIR-based review
+    let mut due_items = Vec::new();
+    let mut new_items = Vec::new();
+    
     for item in &items {
         let attempts = state.db.get_attempts_by_item(&item.id).map_err(|e| e.to_string())?;
         
         if attempts.is_empty() {
-            // New item, return it
-            return Ok(Some(item.clone()));
-        }
-        
-        // Check if item is due (simple check - last attempt scheduled days <= elapsed days)
-        if let Some(last_attempt) = attempts.first() {
-            if last_attempt.scheduled_days <= last_attempt.elapsed_days {
-                return Ok(Some(item.clone()));
+            new_items.push(item.clone());
+        } else if let Some(last_attempt) = attempts.first() {
+            // Use SIR scheduler to check if due
+            if state.sir.is_due(last_attempt) {
+                due_items.push((item.clone(), last_attempt.clone()));
             }
         }
     }
     
-    // If no due items, return the first new item or None
-    Ok(items.into_iter().find(|item| {
-        state.db.get_attempts_by_item(&item.id)
-            .map(|attempts| attempts.is_empty())
-            .unwrap_or(false)
-    }))
+    // Prioritize due items in early SIR phases, then new items
+    due_items.sort_by(|a, b| {
+        // Earlier phases get higher priority
+        let phase_order_a = match a.1.sir_phase {
+            SirPhase::Encoding => 0,
+            SirPhase::ShortTermRetrieval => 1,
+            SirPhase::InterleavedRetrieval => 2,
+            SirPhase::MediumSpacing => 3,
+            SirPhase::IntegrationTransfer => 4,
+        };
+        let phase_order_b = match b.1.sir_phase {
+            SirPhase::Encoding => 0,
+            SirPhase::ShortTermRetrieval => 1,
+            SirPhase::InterleavedRetrieval => 2,
+            SirPhase::MediumSpacing => 3,
+            SirPhase::IntegrationTransfer => 4,
+        };
+        phase_order_a.cmp(&phase_order_b)
+    });
+    
+    // Return first due item, or first new item
+    Ok(due_items.into_iter().next().map(|(item, _)| item).or_else(|| new_items.into_iter().next()))
 }
 
 #[tauri::command]
@@ -338,7 +382,8 @@ pub fn get_due_count(state: State<AppState>) -> Result<usize, String> {
         if attempts.is_empty() {
             due_count += 1;
         } else if let Some(last_attempt) = attempts.first() {
-            if last_attempt.scheduled_days <= last_attempt.elapsed_days {
+            // Use SIR scheduler to check if due
+            if state.sir.is_due(last_attempt) {
                 due_count += 1;
             }
         }

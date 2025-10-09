@@ -1,15 +1,23 @@
 // Core entity types
+
+export interface LearningMaterial {
+  id: string;
+  content: string;
+  domain: string;
+  encoding_date: string;
+  created_at: string;
+}
+
 export interface Concept {
   id: string;
   name: string;
   domain: string;
   subdomain?: string;
   description?: string;
-  mastery: number; // 0-100
-  stability: number; // FSRS stability in days
-  coverage: number; // % of items attempted
-  lastReviewed?: Date;
-  createdAt: Date;
+  tags: string[];
+  learning_material_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export type ItemType = 'mcq' | 'free-recall' | 'calc' | 'case' | 'cloze';
@@ -52,16 +60,41 @@ export interface CaseStep {
   points: number;
 }
 
+export type SirPhase =
+  | 'Encoding'
+  | 'ShortTermRetrieval'
+  | 'InterleavedRetrieval'
+  | 'MediumSpacing'
+  | 'IntegrationTransfer';
+
+export interface MetacognitiveReflection {
+  felt_uncertain: boolean;
+  felt_confusing: boolean;
+  needs_review: boolean;
+  notes?: string;
+}
+
 export interface Attempt {
   id: string;
-  itemId: string;
-  conceptIds: string[];
-  userAnswer: string | string[];
-  isCorrect: boolean;
+  item_id: string;
+  session_id?: string;
+  user_answer: string;
+  is_correct: boolean;
   confidence: number; // 1-5
-  timeSpent: number; // seconds
-  timestamp: Date;
+  time_spent_ms: number;
+  attempted_at: string;
+  sir_phase: SirPhase;
+  next_review_date: string;
+  metacognitive?: MetacognitiveReflection;
+  // Legacy FSRS fields
+  stability: number;
+  difficulty: number;
+  elapsed_days: number;
+  scheduled_days: number;
+  review_state: ReviewState;
 }
+
+export type ReviewState = 'New' | 'Learning' | 'Review' | 'Relearning';
 
 export type SessionType = 'Mixed' | 'Diagnostic' | { Focused: { concept_id: string } } | { Exam: { time_limit_ms: number } };
 

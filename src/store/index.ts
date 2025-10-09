@@ -10,6 +10,7 @@ import type {
   RemediationPlan,
   ConceptMastery,
   DailyPlan,
+  MetacognitiveReflection,
 } from '@/types';
 
 interface AppState {
@@ -40,7 +41,7 @@ interface AppState {
   deleteConcept: (id: string) => Promise<void>;
   createItem: (stem: string, itemType: any, conceptIds: string[], explanation: string) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
-  submitAttempt: (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpent: number) => Promise<void>;
+  submitAttempt: (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpent: number, metacognitive?: MetacognitiveReflection) => Promise<void>;
   createSession: (sessionType: any, totalItems: number) => Promise<void>;
   completeCurrentSession: (completedItems: number, accuracy: number, avgConfidence: number) => Promise<void>;
   clearDatabase: () => Promise<void>;
@@ -162,9 +163,9 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  submitAttempt: async (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpent: number) => {
+  submitAttempt: async (itemId: string, sessionId: string | null, userAnswer: string, isCorrect: boolean, confidence: number, timeSpent: number, metacognitive?: MetacognitiveReflection) => {
     try {
-      await api.attempts.submit(itemId, sessionId, userAnswer, isCorrect, confidence, timeSpent);
+      await api.attempts.submit(itemId, sessionId, userAnswer, isCorrect, confidence, timeSpent, metacognitive);
       await get().loadConceptMastery();
       await get().loadDailyPlan();
     } catch (error: any) {
