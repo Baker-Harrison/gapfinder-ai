@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,6 @@ import { Progress } from '@/components/ui/progress';
 import { useStore } from '@/store';
 import { Clock, Flag, Pause, CheckCircle2, XCircle, Brain, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Item } from '@/types';
 
 export function Learn() {
   const { items, getConceptById } = useStore();
@@ -19,6 +18,15 @@ export function Learn() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
+
+  useEffect(() => {
+    setTimeElapsed(0);
+    const timer = window.setInterval(() => {
+      setTimeElapsed((prev) => prev + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [currentIndex]);
 
   const currentItem = items[currentIndex];
   const progress = ((currentIndex + 1) / items.length) * 100;
