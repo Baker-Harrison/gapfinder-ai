@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::types::ValueRef;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::models::*;
@@ -15,6 +16,22 @@ impl Database {
         let db = Self { conn };
         db.init_schema()?;
         Ok(db)
+    }
+
+    fn read_f64(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<f64> {
+        match row.get_ref(idx)? {
+            ValueRef::Null => Ok(0.0),
+            ValueRef::Integer(i) => Ok(i as f64),
+            ValueRef::Real(f) => Ok(f),
+            ValueRef::Text(text) => {
+                let parsed = std::str::from_utf8(text)
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                Ok(parsed)
+            }
+            ValueRef::Blob(_) => Ok(0.0),
+        }
     }
 
     fn init_schema(&self) -> Result<()> {
@@ -320,8 +337,8 @@ impl Database {
                     metacognitive: row
                         .get::<_, Option<String>>(10)?
                         .and_then(|s| serde_json::from_str(&s).ok()),
-                    stability: row.get(11)?,
-                    difficulty: row.get(12)?,
+                    stability: Self::read_f64(row, 11)?,
+                    difficulty: Self::read_f64(row, 12)?,
                     elapsed_days: row.get(13)?,
                     scheduled_days: row.get(14)?,
                     review_state: serde_json::from_str(&row.get::<_, String>(15)?).unwrap(),
